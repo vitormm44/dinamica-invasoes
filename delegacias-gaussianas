@@ -1,0 +1,234 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Aug  6 13:38:00 2019
+
+@author: Vitor
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+
+#Define o tamanho da cidade
+n = 128
+
+
+#Criação de C
+#---------------------------------------------------------------------
+
+#Número de delegacias
+n_deleg = 1638  #10% de n*n, nesse caso
+
+#Posições das delegacias
+deleg_pos = np.random.randint(0, n, size=(n_deleg, 2))
+
+x = np.linspace(0, n-1, n)
+y = np.linspace(0, n-1, n)
+
+[x_, y_] = np.meshgrid(x, y)
+
+c=1 #Esse é o valor de b descrito no TCC
+alpha=1  #alpha descrito no TCC
+
+#Cria C
+c_s = np.zeros((n,n))
+for i in range(n_deleg):
+    c_s += alpha*np.exp(-c*((y_ - deleg_pos[i,0])**2) - c*((x_ - deleg_pos[i,1]))**2)
+
+#---------------------------------------------------------------------
+
+#Parâmetros do artigo original
+theta = 0.56
+w = 1/15
+eta = 0.2 #Entre 0 e 1
+z = 4 #Número de vizinhos
+l = 1
+Gamma = 0.019
+dt = 0.01
+a0scalar = 1/30
+
+#Ladrões
+nbarra = n*n*Gamma*dt/(1-np.exp(-a0scalar*dt))
+n_lad_0 = int(nbarra) #Quantidade inicial
+
+
+#Cria as probabilidades iniciais de assalto
+a0 = np.random.rand(n, n)
+for i in range(n):
+    for j in range(n):
+        a0[i, j] = a0scalar
+
+#Cria a probabilidade variável de assalto
+bbarra = theta*Gamma/w
+
+b_s = np.zeros((n,n))
+for i in range(n):
+    for j in range(n):
+        b_s[i, j] = bbarra
+
+
+deltab = np.zeros((n,n))
+for i in range(n):
+    for j in range(n):
+        termo1 = b_s[(i+1)%n, j]
+        termo2 = b_s[(i-1)%n, j]
+        termo3 = b_s[i, (j+1)%n]
+        termo4 = b_s[i, (j-1)%n]
+        termo5 = z*b_s[i, j]
+        deltab[i, j] = (termo1 + termo2 + termo3 + termo4 - termo5)/(l**2)
+
+a_s = a0 + b_s - c_s
+
+#Determina um valor mínimo para a probabilidade de assalto
+for i in range (n):
+    for j in range(n):
+        a_s[i,j] = max(a_s[i,j], 1/3000)
+
+p_s = np.zeros((n,n))
+for i in range(n):
+    for j in range(n):
+        p_s[i, j] = 1 - np.exp(-a_s[i, j]*dt)
+
+
+#Posiciona os primeiros ladrões
+lad_pos = np.random.randint(0, n, size=(n_lad_0, 2)) 
+
+
+#Número de iterações
+t = 0
+T = 730
+
+count = np.zeros((n,n))
+
+remove = []
+
+
+print("Tempo = ", t)
+fig = plt.figure() 
+mpl.colors.Normalize(vmin=None, vmax=None, clip=False) 
+plt.pcolor(p_s) 
+plt.colorbar() 
+plt.show() 
+fig.savefig('fig'+str(t)+'.png',dpi=fig.dpi)
+
+
+count_imp = 0
+
+while t < T:
+    
+    a_s = a0 + b_s - c_s
+    
+    for i in range (n):
+        for j in range(n):
+            a_s[i,j] = max(a_s[i,j], 1/3000)
+
+    for i in range(n):
+        for j in range(n):
+            p_s[i, j] = 1 - np.exp(-a_s[i, j]*dt)
+
+    lad_pos = lad_pos
+    
+    #conta o número de assaltos nessa rodada    
+    count = np.zeros((n,n))
+    
+    for i in range(len(lad_pos)):
+        p = np.random.rand(1)
+
+        
+        if p <= p_s[lad_pos[i, 0], lad_pos[i, 1]]: #Ocorre um assalto
+            #print(p,p_s[lad_pos[i, 0], lad_pos[i, 1]])
+            #input("Aperte uma tecla.")
+            count[lad_pos[i, 0]][lad_pos[i, 1]] += 1
+                    
+            #Marca o ladrão para ser removido ao final
+            remove.append(lad_pos[i])
+            
+        else: # ir pra casa vizinha        
+            #Probabilidade do ladrão ir pra determinada casa vizinha
+            
+            q1 = a_s[(lad_pos[i][0]+1)%n , lad_pos[i][1]]
+            q2 = a_s[lad_pos[i][0] , (lad_pos[i][1]+1)%n]
+            q3 = a_s[(lad_pos[i][0]-1)%n , lad_pos[i][1]]
+            q4 = a_s[lad_pos[i][0] , (lad_pos[i][1]-1)%n]
+            
+            somaq = q1 + q2 + q3 + q4
+            
+            q1 /= somaq
+            q2 /= somaq
+            q3 /= somaq
+            q4 /= somaq           
+            
+            
+            l = np.random.rand()
+            if l < q1:
+                lad_pos[i, 0] = (lad_pos[i, 0] + 1)%n
+            elif l >= q1 and l < (q1+q2):
+                lad_pos[i, 1] = (lad_pos[i, 1] + 1)%n
+            elif l >= q2 and l < (q1+q2+q3):
+                lad_pos[i, 0] = (lad_pos[i, 0] - 1)%n
+            else:
+                lad_pos[i, 1] = (lad_pos[i, 1] - 1)%n
+            
+    for i in range(n):
+        for j in range(n):
+            p_s[i, j] = min(p_s[i, j], 0.99)
+    
+    #Remove os ladrões dessa rodada
+    for i in range(len(remove)):
+        lad_pos = np.delete(lad_pos, remove[i], axis=0)
+    
+    remove = []
+
+    t += dt
+
+    #Imprime resultados intermediários
+    if (count_imp%1000==0) :
+        print("Tempo = ", t)
+        fig = plt.figure() 
+        mpl.colors.Normalize(vmin=None, vmax=None, clip=False) 
+        plt.pcolor(p_s) 
+        plt.colorbar() 
+        #plt.scatter(lad_pos[:, 0] + 0.5, lad_pos[:, 1] + 0.5, color = 'red', s=5) 
+        plt.show() 
+        fig.savefig('fig'+str(t)+'.png',dpi=fig.dpi)
+
+    count_imp += 1
+
+    #Inclui os novos ladroes
+   
+    new_burg = -(np.sign(np.random.rand(n,n) - Gamma*dt)-1)/2
+    for i in range(n):
+        for j in range(n):
+            if (new_burg[i,j] == 1):
+                lad_pos = np.append(lad_pos, [[i, j]], axis=0)
+            
+    #atualiza o valor de b_s
+    for i in range(n):
+        for j in range(n):    
+            termo1 = b_s[i, j]
+            termo2 = b_s[(i+1)%n, j]
+            termo3 = b_s[(i-1)%n, j]
+            termo4 = b_s[i, (j+1)%n]
+            termo5 = b_s[i, (j-1)%n]
+    
+            b_s[i, j] = ((1-eta)*termo1 + (eta/z)*(termo2+termo3+termo4+termo5))*(1-w*dt)
+    
+            b_s[i, j] += theta*count[i, j]
+   
+
+print("Tempo = ", t)
+fig = plt.figure() 
+mpl.colors.Normalize(vmin=None, vmax=None, clip=False) 
+plt.pcolor(p_s) 
+plt.colorbar() 
+plt.show() 
+fig.savefig('fig'+str(t)+'.png',dpi=fig.dpi)
+
+print("Tempo = ", t)
+fig = plt.figure() 
+mpl.colors.Normalize(vmin=None, vmax=None, clip=False) 
+plt.pcolor(p_s) 
+plt.colorbar() 
+plt.scatter(deleg_pos[:, 0] + 0.5, deleg_pos[:, 1] + 0.5, color = 'red', s=1) 
+plt.show() 
+fig.savefig('fig'+str(t)+'.png',dpi=fig.dpi)
